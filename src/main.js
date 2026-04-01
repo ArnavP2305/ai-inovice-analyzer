@@ -121,15 +121,15 @@
 
         // History
         $('btn-back-to-upload').addEventListener('click', showUpload);
-        $('btn-clear-history').addEventListener('click', () => {
+        $('btn-clear-history').addEventListener('click', async () => {
             if (confirm('Are you sure you want to delete all saved invoices?')) {
-                StorageManager.clearHistory();
-                renderHistory();
+                await StorageManager.clearHistory();
+                await renderHistory();
                 showToast('History cleared', 'info');
             }
         });
-        $('btn-export-all-history').addEventListener('click', () => {
-            const history = StorageManager.getHistory();
+        $('btn-export-all-history').addEventListener('click', async () => {
+            const history = await StorageManager.getHistory();
             if (history.length === 0) return showToast('No history to export', 'info');
             ExportManager.exportAllJSON(history);
             showToast('Exported all invoices', 'success');
@@ -409,6 +409,7 @@
         processingSection.classList.add('hidden');
         resultsSection.classList.add('hidden');
         historySection.classList.add('hidden');
+        $('dashboard-section').classList.add('hidden');
 
         switch (name) {
             case 'upload':
@@ -426,6 +427,10 @@
             case 'history':
                 historySection.classList.remove('hidden');
                 historySection.classList.add('visible');
+                break;
+            case 'dashboard':
+                $('dashboard-section').classList.remove('hidden');
+                $('dashboard-section').classList.add('visible');
                 break;
         }
     }
@@ -693,21 +698,29 @@
         return data;
     }
 
-    function saveCurrentInvoice() {
+    async function saveCurrentInvoice() {
         const data = getCurrentData();
         if (!data) return showToast('No invoice data to save', 'error');
 
-        StorageManager.saveInvoice(data);
-        showToast('Invoice saved to history', 'success');
+        try {
+            await StorageManager.saveInvoice(data);
+            showToast('Invoice saved to database securely', 'success');
+        } catch(e) {
+            showToast(e.message, 'error');
+            if(e.message.includes('log in')) {
+                const modal = $('auth-modal');
+                if(modal) modal.classList.remove('hidden');
+            }
+        }
     }
 
-    function showHistory() {
+    async function showHistory() {
         showSection('history');
-        renderHistory();
+        await renderHistory();
     }
 
-    function renderHistory() {
-        const history = StorageManager.getHistory();
+    async function renderHistory() {
+        const history = await StorageManager.getHistory();
         const listEl = $('history-list');
         const noMsg = $('no-history-msg');
 
@@ -747,10 +760,10 @@
                 loadFromHistory(entry);
             });
 
-            div.querySelector('.btn-del').addEventListener('click', (e) => {
+            div.querySelector('.btn-del').addEventListener('click', async (e) => {
                 e.stopPropagation();
-                StorageManager.deleteInvoice(entry.id);
-                renderHistory();
+                await StorageManager.deleteInvoice(entry.id);
+                await renderHistory();
                 showToast('Invoice deleted', 'info');
             });
 
@@ -990,5 +1003,129 @@
         if (!str) return '';
         return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+
+    // ---- Auth & Dashboard Logic ----
+    let isLoginMode = true;
+
+    function initSaaSFeatures() {
+        $('btn-login-modal').addEventListener('click', () => {
+            $('auth-modal').classList.remove('hidden');
+            $('auth-error').style.display = 'none';
+        });
+        
+        $('btn-close-auth-modal').addEventListener('click', () => {
+            $('auth-modal').classList.add('hidden');
+        });
+
+        $('btn-toggle-auth-mode').addEventListener('click', () => {
+            isLoginMode = !isLoginMode;
+            $('auth-modal-title').textContent = isLoginMode ? 'Sign In' : 'Create Account';
+            $('btn-submit-auth').textContent = isLoginMode ? 'Login' : 'Register';
+            $('btn-toggle-auth-mode').textContent = isLoginMode ? 'Need an account? Register' : 'Already have an account? Login';
+            $('auth-error').style.display = 'none';
+        });
+
+        $('btn-submit-auth').addEventListener('click', async () => {
+            const email = $('auth-email').value.trim();
+            const password = $('auth-password').value.trim();
+            const errEl = $('auth-error');
+            
+            if(!email || !password) {
+                errEl.textContent = 'Please fill all fields';
+                errEl.style.display = 'block';
+                return;
+            }
+
+            const emailRegex = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
+            if (!emailRegex.test(email)) {
+                errEl.textContent = 'Please enter a valid email address';
+                errEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                if (isLoginMode) {
+                    const formData = new URLSearchParams();
+                    formData.append('username', email); // OAuth2 expects 'username' field
+                    formData.append('password', password);
+
+                    const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!res.ok) throw new Error('Invalid credentials');
+                    
+                    const data = await res.json();
+                    StorageManager.setToken(data.access_token);
+                    
+                } else {
+                    const res = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: email, password: password })
+                    });
+                    
+                    if (!res.ok) {
+                        const errData = await res.json();
+                        let errMsg = 'Registration failed';
+                        if (Array.isArray(errData.detail)) errMsg = 'Invalid email format or password';
+                        else if (errData.detail) errMsg = errData.detail;
+                        throw new Error(errMsg);
+                    }
+                    
+                    // Auto login after register
+                    const formData = new URLSearchParams();
+                    formData.append('username', email);
+                    formData.append('password', password);
+                    const loginRes = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const loginData = await loginRes.json();
+                    StorageManager.setToken(loginData.access_token);
+                }
+
+                $('auth-modal').classList.add('hidden');
+                updateAuthState();
+                showToast(isLoginMode ? 'Logged in successfully' : 'Account created & logged in', 'success');
+
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.style.display = 'block';
+            }
+        });
+
+        $('btn-logout').addEventListener('click', () => {
+            StorageManager.setToken(null);
+            updateAuthState();
+            showUpload();
+            showToast('Logged out', 'info');
+        });
+
+        $('btn-dashboard').addEventListener('click', () => {
+            showSection('dashboard');
+            if (window.AnalyticsBoard) window.AnalyticsBoard.loadData();
+        });
+
+        $('btn-dash-back').addEventListener('click', showUpload);
+
+        updateAuthState();
+    }
+
+    function updateAuthState() {
+        if (StorageManager.getToken()) {
+            $('btn-login-modal').classList.add('hidden');
+            $('btn-logout').classList.remove('hidden');
+            $('btn-dashboard').classList.remove('hidden');
+        } else {
+            $('btn-login-modal').classList.remove('hidden');
+            $('btn-logout').classList.add('hidden');
+            $('btn-dashboard').classList.add('hidden');
+        }
+    }
+
+    // Initialize SaaS features
+    document.addEventListener('DOMContentLoaded', initSaaSFeatures);
 
 })();

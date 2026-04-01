@@ -9,12 +9,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="dashboard.css">
 
     <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs" type="module"></script>
 
     <!-- Tesseract.js -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+    <!-- Chart.js for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <!-- Floating Particles Background -->
@@ -44,13 +48,20 @@
                 </div>
             </div>
             <div class="header-actions">
+                <button id="btn-dashboard" class="btn-ghost hidden" title="My Dashboard">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    <span>Dashboard</span>
+                </button>
                 <button id="btn-api-settings" class="btn-glass" title="API Settings">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                     <span>API Key</span>
                 </button>
-                <button id="btn-history" class="btn-glass" title="Processing History">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <span>History</span>
+                <!-- Auth Buttons -->
+                <button id="btn-login-modal" class="btn-primary" title="Login / Register">
+                    <span>Login</span>
+                </button>
+                <button id="btn-logout" class="btn-ghost hidden" title="Logout">
+                    <span>Logout</span>
                 </button>
             </div>
         </div>
@@ -375,19 +386,51 @@
             </details>
         </section>
 
-        <!-- History Section -->
+        <!-- History Section (Now integrated inside Dashboard or standalone) -->
         <section id="history-section" class="section hidden">
             <div class="section-header">
                 <h2>Processing History</h2>
-                <p>Previously extracted invoices saved locally</p>
+                <p>Previously extracted invoices saved to your account</p>
             </div>
             <div class="history-actions">
-                <button id="btn-clear-history" class="btn-sm btn-ghost">Clear All History</button>
-                <button id="btn-export-all-history" class="btn-sm btn-glass">Export All (JSON)</button>
                 <button id="btn-back-to-upload" class="btn-sm btn-primary">← Back to Upload</button>
             </div>
             <div id="history-list" class="history-list"></div>
             <p id="no-history-msg" class="no-items">No saved invoices yet. Process an invoice to see it here.</p>
+        </section>
+
+        <!-- Dashboard / Analytics Section -->
+        <section id="dashboard-section" class="section hidden">
+            <div class="section-header">
+                <h2>My Dashboard</h2>
+                <p>Analytics and insights on your processed invoices</p>
+                <button id="btn-dash-back" class="btn-sm btn-primary" style="margin-top: 1rem;">← Back to Upload</button>
+            </div>
+            
+            <div class="dashboard-grid">
+                <!-- KPI Cards -->
+                <div class="kpi-card glass-card">
+                    <h3>Total Spent</h3>
+                    <p class="kpi-value" id="kpi-total-spent">₹ 0.00</p>
+                </div>
+                <div class="kpi-card glass-card">
+                    <h3>Total Tax Paid</h3>
+                    <p class="kpi-value" id="kpi-total-tax">₹ 0.00</p>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-card glass-card">
+                    <h3>Monthly Spending</h3>
+                    <canvas id="spendingChart"></canvas>
+                </div>
+                <div class="chart-card glass-card">
+                    <h3>Tax Summary Breakdown</h3>
+                    <div style="max-width: 300px; margin: 0 auto;">
+                        <canvas id="taxChart"></canvas>
+                    </div>
+                </div>
+            </div>
         </section>
     </main>
 
@@ -456,6 +499,31 @@
         </div>
     </div>
 
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="modal-overlay hidden">
+        <div class="modal glass-card" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 id="auth-modal-title">Sign In</h3>
+                <button id="btn-close-auth-modal" class="btn-icon">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="field-group">
+                    <label>Email</label>
+                    <input type="email" id="auth-email" class="field-input" placeholder="Enter your email">
+                </div>
+                <div class="field-group">
+                    <label>Password</label>
+                    <input type="password" id="auth-password" class="field-input" placeholder="Enter password">
+                </div>
+                <p id="auth-error" style="color: #ef4444; margin-top: 0.5rem; display: none;"></p>
+            </div>
+            <div class="modal-footer" style="justify-content: space-between;">
+                <button id="btn-toggle-auth-mode" class="btn-sm btn-ghost">Need an account? Register</button>
+                <button id="btn-submit-auth" class="btn-sm btn-primary">Login</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
@@ -468,6 +536,7 @@
     <script src="src/ocrEngine.js"></script>
     <script src="src/exportManager.js"></script>
     <script src="src/invoiceChat.js"></script>
+    <script src="src/analytics.js"></script>
     <script src="src/main.js"></script>
 </body>
 </html>

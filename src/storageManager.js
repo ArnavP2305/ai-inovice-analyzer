@@ -1,57 +1,86 @@
 /* =========================================
-   StorageManager — localStorage persistence
+   StorageManager — API + localStorage persistence
    ========================================= */
 
 const StorageManager = (() => {
     const KEYS = {
-        HISTORY: 'invoiceai_history',
-        API_KEY: 'invoiceai_api_key',         // legacy (gemini)
+        API_KEY: 'invoiceai_api_key',         // legacy
         API_KEY_GEMINI: 'invoiceai_key_gemini',
         API_KEY_GROQ: 'invoiceai_key_groq',
         API_KEY_OPENROUTER: 'invoiceai_key_openrouter',
         PROVIDER: 'invoiceai_provider',
         MODE: 'invoiceai_mode',
+        AUTH_TOKEN: 'invoiceai_token',
     };
 
-    const MAX_HISTORY = 100;
+    function getToken() {
+        return localStorage.getItem(KEYS.AUTH_TOKEN);
+    }
 
-    function getHistory() {
+    function setToken(token) {
+        if (token) localStorage.setItem(KEYS.AUTH_TOKEN, token);
+        else localStorage.removeItem(KEYS.AUTH_TOKEN);
+    }
+
+    // --- API Backend logic ---
+    async function getHistory() {
+        if (!getToken()) return [];
         try {
-            const data = localStorage.getItem(KEYS.HISTORY);
-            return data ? JSON.parse(data) : [];
-        } catch {
+            const res = await fetch('/api/invoices', {
+                headers: { 'Authorization': `Bearer ${getToken()}` }
+            });
+            if (!res.ok) return [];
+            return await res.json();
+        } catch(e) {
+            console.error(e);
             return [];
         }
     }
 
-    function saveInvoice(invoiceData) {
-        const history = getHistory();
+    async function saveInvoice(invoiceData) {
+        if (!getToken()) throw new Error("Please log in to save invoices.");
         const entry = {
             id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
             filename: invoiceData.filename || 'Unknown',
-            processedAt: new Date().toISOString(),
-            complianceScore: invoiceData.complianceScore || 0,
+            total_amount: parseFloat(invoiceData.grandTotal) || 0.0,
+            tax_amount: parseFloat(invoiceData.totalTax) || 0.0,
             data: invoiceData,
         };
-        history.unshift(entry);
-        if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
-        localStorage.setItem(KEYS.HISTORY, JSON.stringify(history));
-        return entry;
+        
+        const res = await fetch('/api/invoices', {
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${getToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(entry)
+        });
+        if (!res.ok) throw new Error("Failed to save to database");
+        return {
+            ...entry,
+            processedAt: new Date().toISOString()
+        };
     }
 
-    function getInvoice(id) {
-        const history = getHistory();
+    async function getInvoice(id) {
+        // Typically handled by searching locally fetched history, or add a specific GET /api/invoices/:id route
+        const history = await getHistory();
         return history.find(h => h.id === id) || null;
     }
 
-    function deleteInvoice(id) {
-        let history = getHistory();
-        history = history.filter(h => h.id !== id);
-        localStorage.setItem(KEYS.HISTORY, JSON.stringify(history));
+    async function deleteInvoice(id) {
+        if (!getToken()) return;
+        await fetch(`/api/invoices/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
     }
 
-    function clearHistory() {
-        localStorage.removeItem(KEYS.HISTORY);
+    async function clearHistory() {
+        const history = await getHistory();
+        for (const h of history) {
+            await deleteInvoice(h.id);
+        }
     }
 
     // --- Provider ---
@@ -88,7 +117,6 @@ const StorageManager = (() => {
         }
     }
 
-    // --- Active key (for current provider) ---
     function getActiveApiKey() {
         return getApiKey(getProvider());
     }
@@ -102,17 +130,8 @@ const StorageManager = (() => {
     }
 
     return {
-        getHistory,
-        saveInvoice,
-        getInvoice,
-        deleteInvoice,
-        clearHistory,
-        getProvider,
-        setProvider,
-        getApiKey,
-        setApiKey,
-        getActiveApiKey,
-        getMode,
-        setMode,
+        getToken, setToken,
+        getHistory, saveInvoice, getInvoice, deleteInvoice, clearHistory,
+        getProvider, setProvider, getApiKey, setApiKey, getActiveApiKey, getMode, setMode
     };
 })();
