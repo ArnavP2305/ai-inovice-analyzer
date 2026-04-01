@@ -104,12 +104,13 @@
         $('field-buyer-gstin').addEventListener('input', () => validateGSTINField('field-buyer-gstin', 'val-buyer-gstin'));
 
         // Header buttons
-        $('btn-api-settings').addEventListener('click', showApiModal);
-        $('btn-history').addEventListener('click', showHistory);
+        if ($('btn-api-settings')) $('btn-api-settings').addEventListener('click', showApiModal);
+        if ($('btn-history')) $('btn-history').addEventListener('click', showHistory);
 
         // Modal
         $('btn-close-modal').addEventListener('click', hideApiModal);
         $('btn-save-api').addEventListener('click', saveApiSettings);
+        $('input-api-key-groq').addEventListener('keydown', e => { if (e.key === 'Enter') saveApiSettings(); });
         $('api-modal').addEventListener('click', e => { if (e.target === $('api-modal')) hideApiModal(); });
         // Provider switcher
         $('select-provider').addEventListener('change', () => {
@@ -119,21 +120,25 @@
             if (cfg) cfg.classList.remove('hidden');
         });
 
-        // History
-        $('btn-back-to-upload').addEventListener('click', showUpload);
-        $('btn-clear-history').addEventListener('click', async () => {
-            if (confirm('Are you sure you want to delete all saved invoices?')) {
-                await StorageManager.clearHistory();
-                await renderHistory();
-                showToast('History cleared', 'info');
-            }
-        });
-        $('btn-export-all-history').addEventListener('click', async () => {
-            const history = await StorageManager.getHistory();
-            if (history.length === 0) return showToast('No history to export', 'info');
-            ExportManager.exportAllJSON(history);
-            showToast('Exported all invoices', 'success');
-        });
+        // History (Legacy / Fallback checks)
+        if ($('btn-back-to-upload')) $('btn-back-to-upload').addEventListener('click', showUpload);
+        if ($('btn-clear-history')) {
+            $('btn-clear-history').addEventListener('click', async () => {
+                if (confirm('Are you sure you want to delete all saved invoices?')) {
+                    await StorageManager.clearHistory();
+                    if (typeof renderHistory === 'function') await renderHistory();
+                    showToast('History cleared', 'info');
+                }
+            });
+        }
+        if ($('btn-export-all-history')) {
+            $('btn-export-all-history').addEventListener('click', async () => {
+                const history = await StorageManager.getHistory();
+                if (history.length === 0) return showToast('No history to export', 'info');
+                ExportManager.exportAllJSON(history);
+                showToast('Exported all invoices', 'success');
+            });
+        }
 
         // Chat
         $('btn-chat-send').addEventListener('click', handleChatSend);
@@ -802,15 +807,24 @@
     }
 
     function saveApiSettings() {
-        const provider = $('select-provider').value;
-        const mode = $('select-mode').value;
-        StorageManager.setProvider(provider);
-        StorageManager.setApiKey('groq', $('input-api-key-groq').value.trim());
-        StorageManager.setApiKey('openrouter', $('input-api-key-openrouter').value.trim());
-        StorageManager.setMode(mode);
-        hideApiModal();
-        const providerLabel = { groq: 'Groq', openrouter: 'OpenRouter' }[provider] || provider;
-        showToast(`Settings saved — ${providerLabel} · ${mode === 'regex' ? 'Regex Only' : mode === 'ai' ? 'AI-Powered' : 'Hybrid'}`, 'success');
+        try {
+            const provider = $('select-provider').value;
+            const mode = $('select-mode').value;
+            StorageManager.setProvider(provider);
+            StorageManager.setApiKey('groq', $('input-api-key-groq').value.trim());
+            
+            const routerEl = $('input-api-key-openrouter');
+            if (routerEl) {
+                StorageManager.setApiKey('openrouter', routerEl.value.trim());
+            }
+            StorageManager.setMode(mode);
+            hideApiModal();
+            const providerLabel = { groq: 'Groq', openrouter: 'OpenRouter' }[provider] || provider;
+            showToast(`Settings saved — ${providerLabel} · ${mode === 'regex' ? 'Regex Only' : mode === 'ai' ? 'AI-Powered' : 'Hybrid'}`, 'success');
+        } catch (e) {
+            console.error(e);
+            alert("Error saving API keys: " + e.message);
+        }
     }
 
     // ---- AI Chat ----
