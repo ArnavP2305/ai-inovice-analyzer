@@ -67,8 +67,8 @@ Ensure you have **Python 3.9+** installed on your system.
 
 ### 2. Clone and Setup Environment
 ```bash
-git clone https://github.com/YOUR_USERNAME/invoice-analyzer.git
-cd invoice-analyzer
+git clone https://github.com/YOUR_USERNAME/ai-invoice-analyzer.git
+cd ai-invoice-analyzer
 
 # Create a virtual environment
 python -m venv .venv
